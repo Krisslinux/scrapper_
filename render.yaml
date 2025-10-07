@@ -1,13 +1,13 @@
 # This file tells Render how to build and run your bot.
-# It automates the setup process.
+# It now uses a "web" service type to work with Render's free plan.
 
 services:
-  # This is a "Background Worker", a service that runs 24/7.
-  - type: worker
+  # This is now a "Web Service". It stays online because we run a dummy web server.
+  - type: web
     name: udemy-coupon-bot
     # Use Python as the runtime environment
     env: python
-    # Set the specific Python version
+    # Explicitly use the free plan
     plan: free
     # The command to install dependencies from requirements.txt
     buildCommand: "pip install -r requirements.txt"
