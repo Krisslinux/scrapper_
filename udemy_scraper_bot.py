@@ -22,14 +22,12 @@ SOURCE_CHANNEL = os.environ.get('SOURCE_CHANNEL')
 DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL')
 
 # --- Filtering Configuration ---
-TARGET_CATEGORIES = {"#it_and_software", "#development", "#programming"}
+# **EDIT:** Added more categories to the filter
+TARGET_CATEGORIES = {"#it_and_software", "#development", "#programming", "#design", "#business"}
 TARGET_LANGUAGE = "#english"
 
 # --- !! NEW WEB SERVER FOR RENDER !! ---
-# Render's free Web Service plan requires a port to be open.
-# This simple server runs in a separate thread to keep the service alive.
 def run_web_server():
-    # Render provides the port to use in the PORT environment variable
     PORT = int(os.environ.get('PORT', 10000))
     Handler = http.server.SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
@@ -39,6 +37,10 @@ def run_web_server():
 # --- Input Validation ---
 def validate_config():
     """Checks if all necessary configuration variables are set."""
+    # **FIX:** Moved the global declaration to the top of the function
+    # This tells Python to treat these variables as global throughout this function.
+    global SOURCE_CHANNEL, DESTINATION_CHANNEL
+
     required_vars = {
         'API_ID': API_ID, 'API_HASH': API_HASH, 'BOT_TOKEN': BOT_TOKEN,
         'SOURCE_CHANNEL': SOURCE_CHANNEL, 'DESTINATION_CHANNEL': DESTINATION_CHANNEL
@@ -47,13 +49,17 @@ def validate_config():
     if missing_vars:
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-    global SOURCE_CHANNEL, DESTINATION_CHANNEL
     try:
-        if not SOURCE_CHANNEL.lstrip('-').isdigit(): pass
-        else: SOURCE_CHANNEL = int(SOURCE_CHANNEL)
+        if not SOURCE_CHANNEL.lstrip('-').isdigit():
+            pass # It's a username like @channel_name, leave it as a string
+        else:
+            # It's a numeric ID, convert it to an integer
+            SOURCE_CHANNEL = int(SOURCE_CHANNEL)
+        
+        # Destination channel must be a numeric ID
         DESTINATION_CHANNEL = int(DESTINATION_CHANNEL)
     except ValueError:
-        raise ValueError("Channel IDs must be valid integers or a public username for the source.")
+        raise ValueError("DESTINATION_CHANNEL must be a valid integer ID. SOURCE_CHANNEL can be an integer ID or a public @username.")
 
 # --- Regex to find Udemy URLs ---
 UDEMY_URL_PATTERN = re.compile(r'https?://www\.udemy\.com/course/[^/\s]+/\?couponCode=[\w-]+')
