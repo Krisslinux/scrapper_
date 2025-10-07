@@ -1,0 +1,18 @@
+# This file tells Render how to build and run your bot.
+# It automates the setup process.
+
+services:
+  # This is a "Background Worker", a service that runs 24/7.
+  - type: worker
+    name: udemy-coupon-bot
+    # Use Python as the runtime environment
+    env: python
+    # Set the specific Python version
+    plan: free
+    # The command to install dependencies from requirements.txt
+    buildCommand: "pip install -r requirements.txt"
+    # The command to start the bot
+    startCommand: "python udemy_scraper_bot.py"
+    # Automatically deploy when you push new code to GitHub
+    autoDeploy: yes
+
