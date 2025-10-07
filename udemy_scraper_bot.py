@@ -1,6 +1,6 @@
-# Udemy Coupon Scraper & Cloner Bot
-# This bot clones messages, filters them, and includes a dummy web server
-# to comply with Render's free Web Service hosting requirements.
+# Simple Telegram Cloner Bot
+# This version forwards ALL messages and performs basic cleaning.
+# All complex filters have been removed for reliability.
 
 import os
 import re
@@ -21,12 +21,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 SOURCE_CHANNEL = os.environ.get('SOURCE_CHANNEL')
 DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL')
 
-# --- Filtering Configuration ---
-# **EDIT:** Added more categories to the filter
-TARGET_CATEGORIES = {"#it_and_software", "#development", "#programming", "#design", "#business"}
-TARGET_LANGUAGE = "#english"
-
-# --- !! NEW WEB SERVER FOR RENDER !! ---
+# --- Web Server for Render ---
 def run_web_server():
     PORT = int(os.environ.get('PORT', 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -37,10 +32,7 @@ def run_web_server():
 # --- Input Validation ---
 def validate_config():
     """Checks if all necessary configuration variables are set."""
-    # **FIX:** Moved the global declaration to the top of the function
-    # This tells Python to treat these variables as global throughout this function.
     global SOURCE_CHANNEL, DESTINATION_CHANNEL
-
     required_vars = {
         'API_ID': API_ID, 'API_HASH': API_HASH, 'BOT_TOKEN': BOT_TOKEN,
         'SOURCE_CHANNEL': SOURCE_CHANNEL, 'DESTINATION_CHANNEL': DESTINATION_CHANNEL
@@ -48,59 +40,35 @@ def validate_config():
     missing_vars = [key for key, value in required_vars.items() if not value]
     if missing_vars:
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-
     try:
-        if not SOURCE_CHANNEL.lstrip('-').isdigit():
-            pass # It's a username like @channel_name, leave it as a string
-        else:
-            # It's a numeric ID, convert it to an integer
-            SOURCE_CHANNEL = int(SOURCE_CHANNEL)
-        
-        # Destination channel must be a numeric ID
+        if not SOURCE_CHANNEL.lstrip('-').isdigit(): pass
+        else: SOURCE_CHANNEL = int(SOURCE_CHANNEL)
         DESTINATION_CHANNEL = int(DESTINATION_CHANNEL)
     except ValueError:
         raise ValueError("DESTINATION_CHANNEL must be a valid integer ID. SOURCE_CHANNEL can be an integer ID or a public @username.")
-
-# --- Regex to find Udemy URLs ---
-UDEMY_URL_PATTERN = re.compile(r'https?://www\.udemy\.com/course/[^/\s]+/\?couponCode=[\w-]+')
 
 # --- Initialize the Bot Client ---
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 @bot.on(events.NewMessage(chats=SOURCE_CHANNEL))
-async def coupon_handler(event):
+async def message_handler(event):
     """
-    Handles new messages, filters them by category and language,
-    cleans them, and forwards them.
+    Handles ALL new messages, cleans them, and forwards them.
+    No more complex filtering.
     """
+    logging.info("New message received. Processing...")
     message = event.message
-    udemy_url = None
-    if message.buttons:
-        for row in message.buttons:
-            for button in row:
-                button_url = getattr(button.button, 'url', None)
-                if button_url and 'enroll' in button.text.lower():
-                    if UDEMY_URL_PATTERN.search(button_url):
-                        udemy_url = button_url
-                        break
-            if udemy_url: break
 
-    if not udemy_url:
-        logging.info("Message does not contain a valid Udemy 'Enroll' button. Skipping.")
-        return
-
-    message_text_lower = message.text.lower()
-    has_target_language = 'language:' not in message_text_lower or TARGET_LANGUAGE in message_text_lower
-    has_target_category = 'category:' not in message_text_lower or any(cat in message_text_lower for cat in TARGET_CATEGORIES)
-
-
-    if not (has_target_language and has_target_category):
-        logging.info("Skipping post because it does not match language/category filters.")
-        return
-
-    cleaned_lines = [line for line in message.text.split('\n') if not line.strip().lower().startswith("join ")]
+    # --- Text Cleaning: Remove any line that starts with "join" ---
+    cleaned_lines = []
+    if message.text:
+        cleaned_lines = [
+            line for line in message.text.split('\n')
+            if not line.strip().lower().startswith("join ")
+        ]
     modified_text = '\n'.join(cleaned_lines)
 
+    # --- Button Cleaning: Remove buttons with "join" or "share" ---
     new_keyboard = []
     if message.buttons:
         for row in message.buttons:
@@ -111,6 +79,8 @@ async def coupon_handler(event):
                     new_row.append(button)
             if new_row:
                 new_keyboard.append(new_row)
+
+    # --- Forward the Message ---
     try:
         await bot.send_message(
             DESTINATION_CHANNEL,
@@ -119,7 +89,7 @@ async def coupon_handler(event):
             buttons=new_keyboard if new_keyboard else None,
             link_preview=False
         )
-        logging.info(f"Successfully filtered and forwarded a coupon post.")
+        logging.info("Successfully cleaned and forwarded the message.")
     except Exception as e:
         logging.error(f"Failed to send the cloned message: {e}")
 
@@ -128,8 +98,7 @@ async def main():
     try:
         validate_config()
         logging.info("Bot configuration is valid.")
-        logging.info(f"Filtering for categories: {TARGET_CATEGORIES}")
-        logging.info(f"Filtering for language: {TARGET_LANGUAGE}")
+        logging.info("BOT MODE: Simple Forwarder. All messages will be processed.")
         logging.info("Bot is running and connected to Telegram...")
         await bot.run_until_disconnected()
     except ValueError as e:
@@ -138,11 +107,8 @@ async def main():
         logging.critical(f"An unexpected error occurred: {e}")
 
 if __name__ == '__main__':
-    # Start the dummy web server in a separate thread
     web_thread = threading.Thread(target=run_web_server)
     web_thread.daemon = True
     web_thread.start()
-
-    # Start the bot's main loop
     bot.loop.run_until_complete(main())
 
