@@ -1,10 +1,13 @@
 # Udemy Coupon Scraper & Cloner Bot
-# This bot clones messages but now includes FILTERS for language and category.
-# It only forwards courses that are in English AND match a target category.
+# This bot clones messages, filters them, and includes a dummy web server
+# to comply with Render's free Web Service hosting requirements.
 
 import os
 import re
 import logging
+import threading
+import http.server
+import socketserver
 from telethon import TelegramClient, events
 
 # --- Basic Logging Configuration ---
@@ -18,12 +21,20 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 SOURCE_CHANNEL = os.environ.get('SOURCE_CHANNEL')
 DESTINATION_CHANNEL = os.environ.get('DESTINATION_CHANNEL')
 
-# --- FILTERING CONFIGURATION ---
-# Define the categories and language you want to forward.
-# Using a set for categories makes lookups very fast.
+# --- Filtering Configuration ---
 TARGET_CATEGORIES = {"#it_and_software", "#development", "#programming"}
 TARGET_LANGUAGE = "#english"
 
+# --- !! NEW WEB SERVER FOR RENDER !! ---
+# Render's free Web Service plan requires a port to be open.
+# This simple server runs in a separate thread to keep the service alive.
+def run_web_server():
+    # Render provides the port to use in the PORT environment variable
+    PORT = int(os.environ.get('PORT', 10000))
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        logging.info(f"Dummy web server started on port {PORT} to keep Render service alive.")
+        httpd.serve_forever()
 
 # --- Input Validation ---
 def validate_config():
@@ -38,12 +49,10 @@ def validate_config():
 
     global SOURCE_CHANNEL, DESTINATION_CHANNEL
     try:
-        # Allow usernames (non-digit) for source, but convert IDs to int
         if not SOURCE_CHANNEL.lstrip('-').isdigit(): pass
         else: SOURCE_CHANNEL = int(SOURCE_CHANNEL)
         DESTINATION_CHANNEL = int(DESTINATION_CHANNEL)
-    except (ValueError, AttributeError):
-        # AttributeError handles case where a variable might be None
+    except ValueError:
         raise ValueError("Channel IDs must be valid integers or a public username for the source.")
 
 # --- Regex to find Udemy URLs ---
@@ -59,18 +68,11 @@ async def coupon_handler(event):
     cleans them, and forwards them.
     """
     message = event.message
-    
-    # Ignore messages without text, as they can't be filtered
-    if not message.text:
-        return
-
-    # 1. Primary Check: Find the Udemy URL from the "Enroll Course" button.
     udemy_url = None
     if message.buttons:
         for row in message.buttons:
             for button in row:
-                # Use getattr for safe access to attributes
-                button_url = getattr(getattr(button, 'button', None), 'url', None)
+                button_url = getattr(button.button, 'url', None)
                 if button_url and 'enroll' in button.text.lower():
                     if UDEMY_URL_PATTERN.search(button_url):
                         udemy_url = button_url
@@ -81,33 +83,18 @@ async def coupon_handler(event):
         logging.info("Message does not contain a valid Udemy 'Enroll' button. Skipping.")
         return
 
-    # 2. FILTERING LOGIC
     message_text_lower = message.text.lower()
-    has_target_language = False
-    has_target_category = False
+    has_target_language = 'language:' not in message_text_lower or TARGET_LANGUAGE in message_text_lower
+    has_target_category = 'category:' not in message_text_lower or any(cat in message_text_lower for cat in TARGET_CATEGORIES)
 
-    # Check each line for our filter criteria
-    for line in message_text_lower.split('\n'):
-        stripped_line = line.strip()
-        if stripped_line.startswith('language:') and TARGET_LANGUAGE in stripped_line:
-            has_target_language = True
-        if stripped_line.startswith('category:'):
-            if any(cat in stripped_line for cat in TARGET_CATEGORIES):
-                has_target_category = True
 
-    # If it doesn't meet BOTH criteria, skip it.
     if not (has_target_language and has_target_category):
-        logging.info(f"Skipping post. Language match: {has_target_language}, Category match: {has_target_category}.")
+        logging.info("Skipping post because it does not match language/category filters.")
         return
 
-    # 3. Clean the message text (Remove "Join" lines)
-    cleaned_lines = [
-        line for line in message.text.split('\n')
-        if not line.strip().lower().startswith("join ")
-    ]
+    cleaned_lines = [line for line in message.text.split('\n') if not line.strip().lower().startswith("join ")]
     modified_text = '\n'.join(cleaned_lines)
 
-    # 4. Filter the inline buttons (Remove "Join" or "Share")
     new_keyboard = []
     if message.buttons:
         for row in message.buttons:
@@ -118,8 +105,6 @@ async def coupon_handler(event):
                     new_row.append(button)
             if new_row:
                 new_keyboard.append(new_row)
-
-    # 5. Send the final, filtered, and cleaned message
     try:
         await bot.send_message(
             DESTINATION_CHANNEL,
@@ -147,5 +132,11 @@ async def main():
         logging.critical(f"An unexpected error occurred: {e}")
 
 if __name__ == '__main__':
+    # Start the dummy web server in a separate thread
+    web_thread = threading.Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+
+    # Start the bot's main loop
     bot.loop.run_until_complete(main())
 
