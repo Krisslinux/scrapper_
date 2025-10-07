@@ -1,5 +1,1 @@
-This file lists the Python packages needed for the project.
-
-Render will automatically install these.
-
 telethon
